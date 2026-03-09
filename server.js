@@ -1,8 +1,6 @@
 /**
- * ONESTOPENGLISH BACKUP TOOL - OPTIMIZADO PARA HOSTING
- * Requisitos:
- * 1. Hosting con soporte para Node.js.
- * 2. Ejecutar 'npm install' con el archivo package.json proporcionado.
+ * ONESTOPENGLISH BACKUP TOOL - VERSION 2.0 (CORREGIDA)
+ * Optimizado para despliegue en Render/Hosting y corrección de login.
  */
 
 const express = require('express');
@@ -23,7 +21,7 @@ const htmlContent = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Onestopenglish Hosting Backup</title>
+    <title>Onestopenglish Backup Lite</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .custom-scroll::-webkit-scrollbar { width: 4px; }
@@ -33,48 +31,36 @@ const htmlContent = `
 </head>
 <body class="bg-slate-900 min-h-screen flex items-center justify-center p-4 font-sans">
     <div class="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-lg">
-        <div class="flex items-center justify-center mb-6">
-            <div class="bg-indigo-100 p-3 rounded-2xl">
-                <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d=" cloud-download"></path>
-                    <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
-                </svg>
-            </div>
-        </div>
-        
-        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-2">Respaldo Remoto</h1>
-        <p class="text-slate-500 text-center text-sm mb-8">Esta herramienta descargará la librería de Onestopenglish directamente a tu servidor y luego te entregará un ZIP.</p>
+        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-2">Respaldo v2.0</h1>
+        <p class="text-slate-500 text-center text-sm mb-8">Si el login falla, verifica que tu cuenta no tenga verificación de dos pasos activa.</p>
         
         <div class="space-y-5">
             <div>
-                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Email Registrado</label>
-                <input type="email" id="email" class="w-full p-4 border-2 border-slate-100 rounded-2xl mt-1 focus:border-indigo-500 focus:outline-none transition-colors" placeholder="tu@ejemplo.com">
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Email / Usuario</label>
+                <input type="text" id="email" class="w-full p-4 border-2 border-slate-100 rounded-2xl mt-1 focus:border-indigo-500 focus:outline-none transition-colors" placeholder="email@ejemplo.com">
             </div>
             <div>
                 <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Contraseña</label>
                 <input type="password" id="password" class="w-full p-4 border-2 border-slate-100 rounded-2xl mt-1 focus:border-indigo-500 focus:outline-none transition-colors" placeholder="••••••••">
             </div>
-            <button onclick="startDownload()" id="btn" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg hover:shadow-indigo-200 active:scale-[0.98]">
-                📦 Iniciar Descarga Masiva
+            <button onclick="startDownload()" id="btn" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg active:scale-[0.98]">
+                📦 Iniciar Respaldo Total
             </button>
         </div>
 
         <div id="status" class="mt-8 border-t border-slate-100 pt-6 hidden">
-            <div class="flex items-center justify-between mb-4">
-                <div class="flex items-center space-x-3">
-                    <div class="animate-spin rounded-full h-5 w-5 border-2 border-indigo-600 border-t-transparent"></div>
-                    <span id="statusText" class="text-sm font-semibold text-slate-700">Trabajando en el servidor...</span>
-                </div>
+            <div class="flex items-center space-x-3 mb-4">
+                <div class="animate-spin rounded-full h-5 w-5 border-2 border-indigo-600 border-t-transparent"></div>
+                <span id="statusText" class="text-sm font-semibold text-slate-700">Conectando...</span>
             </div>
             <div class="bg-slate-800 p-4 rounded-xl shadow-inner">
                 <div id="log" class="text-[11px] font-mono text-indigo-300 custom-scroll overflow-y-auto max-h-48 space-y-1"></div>
             </div>
-            <p class="text-[10px] text-slate-400 mt-4 text-center italic">Nota: No cierres esta ventana hasta recibir el archivo ZIP.</p>
         </div>
     </div>
 
     <script>
-        function addLog(msg, type = 'info') {
+        function addLog(msg) {
             const log = document.getElementById('log');
             const div = document.createElement('div');
             const time = new Date().toLocaleTimeString();
@@ -88,15 +74,13 @@ const htmlContent = `
             const password = document.getElementById('password').value;
             const btn = document.getElementById('btn');
             const status = document.getElementById('status');
-            const log = document.getElementById('log');
 
-            if(!email || !password) return alert('Por favor, ingresa tus credenciales.');
+            if(!email || !password) return alert('Credenciales incompletas.');
 
             btn.disabled = true;
-            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            btn.classList.add('opacity-50');
             status.classList.remove('hidden');
-            log.innerHTML = "";
-            addLog("Iniciando proceso en el servidor hosting...");
+            addLog("Enviando petición de acceso...");
 
             try {
                 const response = await fetch('/api/download', {
@@ -106,26 +90,24 @@ const htmlContent = `
                 });
 
                 if (response.ok) {
-                    addLog("¡Éxito! El servidor terminó la descarga.", 'success');
-                    addLog("Preparando descarga del ZIP a tu computadora...");
+                    addLog("Descarga finalizada. El navegador recibirá el ZIP ahora.");
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = "Respaldo_Onestopenglish.zip";
+                    a.download = "Backup_Onestopenglish.zip";
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
-                    document.getElementById('statusText').innerText = "✅ Backup finalizado.";
                 } else {
                     const text = await response.text();
-                    addLog("Error: " + text, 'error');
+                    addLog("Error: " + text);
                 }
             } catch (err) {
-                addLog("Error de red o timeout en el hosting.", 'error');
+                addLog("Error crítico de conexión.");
             } finally {
                 btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                btn.classList.remove('opacity-50');
             }
         }
     </script>
@@ -138,103 +120,90 @@ const htmlContent = `
 app.get('/', (req, res) => res.send(htmlContent));
 
 app.post('/api/download', async (req, res) => {
-    // Configurar el timeout del servidor para procesos largos
-    req.setTimeout(0); // Desactivar timeout de entrada
-    res.setTimeout(0); // Desactivar timeout de salida
+    req.setTimeout(0);
+    res.setTimeout(0);
 
     const { email, password } = req.body;
-    const downloadPath = path.join(__dirname, `temp_backup_${Date.now()}`);
+    const downloadPath = path.join(__dirname, `backup_tmp_${Date.now()}`);
     let cookies = "";
 
     try {
         if (!fs.existsSync(downloadPath)) fs.mkdirSync(downloadPath);
 
-        // 1. LOGIN (HTTP puro para compatibilidad con hosting compartido)
-        const form = new FormData();
-        form.append('username', email);
-        form.append('password', password);
-        
-        console.log("Intentando login...");
-        const loginRes = await axios.post('https://www.onestopenglish.com/login', form, {
-            headers: { ...form.getHeaders() },
+        // 1. OBTENER COOKIES INICIALES Y POSIBLE TOKEN
+        const initialRes = await axios.get('https://www.onestopenglish.com/login', {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
+        });
+        const initialCookies = initialRes.headers['set-cookie']?.map(c => c.split(';')[0]).join('; ') || "";
+
+        // 2. INTENTAR LOGIN CON CAMPOS FORMATEADOS
+        const params = new URLSearchParams();
+        params.append('username', email);
+        params.append('password', password);
+        params.append('login', 'Log in'); // A veces el botón tiene nombre y valor
+
+        const loginRes = await axios.post('https://www.onestopenglish.com/login', params.toString(), {
+            headers: { 
+                'Cookie': initialCookies,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.onestopenglish.com/login'
+            },
             maxRedirects: 0,
             validateStatus: (status) => status >= 200 && status < 400
         });
 
-        cookies = loginRes.headers['set-cookie'] ? loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ') : "";
+        cookies = loginRes.headers['set-cookie'] ? loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ') : initialCookies;
 
-        // 2. SECCIONES A DESCARGAR
-        const sections = [
-            '/skills',
-            '/grammar-and-vocabulary',
-            '/business-and-esp',
-            '/methodology',
-            '/young-learners',
-            '/exams'
-        ];
+        // Si no hay redirección exitosa o nuevas cookies, el login falló
+        if (loginRes.status === 200 && loginRes.data.includes('login-form')) {
+            throw new Error('Credenciales inválidas o acceso denegado por el sitio.');
+        }
 
+        // 3. PROCESO DE RASTREO
+        const sections = ['/skills', '/grammar-and-vocabulary', '/business-and-esp'];
         for (const section of sections) {
-            const sectionName = section.replace(/\//g, '') || 'general';
-            const sectionDir = path.join(downloadPath, sectionName);
+            const sectionDir = path.join(downloadPath, section.replace(/\//g, '') || 'general');
             if (!fs.existsSync(sectionDir)) fs.mkdirSync(sectionDir);
 
             const pageRes = await axios.get(`https://www.onestopenglish.com${section}`, {
-                headers: { 'Cookie': cookies }
+                headers: { 'Cookie': cookies, 'User-Agent': 'Mozilla/5.0' }
             });
 
-            // Regex mejorado para capturar enlaces PDF
             const pdfRegex = /href="([^"]+\.pdf)"/g;
             let match;
-            const pdfLinks = [];
-
             while ((match = pdfRegex.exec(pageRes.data)) !== null) {
-                pdfLinks.push(match[1]);
-            }
-
-            for (let fileUrl of pdfLinks) {
+                let fileUrl = match[1];
                 try {
                     if (!fileUrl.startsWith('http')) fileUrl = 'https://www.onestopenglish.com' + fileUrl;
-                    
-                    const rawName = path.basename(fileUrl);
-                    const safeName = rawName.split('?')[0]; // Limpiar parámetros de URL
-                    const fileTarget = path.join(sectionDir, safeName);
+                    const fileName = path.basename(fileUrl).split('?')[0];
+                    const fileTarget = path.join(sectionDir, fileName);
 
                     const fileStream = await axios({
-                        method: 'get',
-                        url: fileUrl,
-                        responseType: 'stream',
-                        headers: { 'Cookie': cookies }
+                        method: 'get', url: fileUrl, responseType: 'stream',
+                        headers: { 'Cookie': cookies, 'User-Agent': 'Mozilla/5.0' }
                     });
 
                     const writer = fs.createWriteStream(fileTarget);
                     fileStream.data.pipe(writer);
                     await new Promise(r => writer.on('finish', r));
-                } catch (e) {
-                    console.log(`Error en archivo: ${fileUrl}`);
-                }
+                } catch (e) { /* Saltar archivos fallidos */ }
             }
         }
 
-        // 3. COMPRESIÓN ZIP
+        // 4. ZIP
         const archive = archiver('zip', { zlib: { level: 5 } });
         res.setHeader('Content-Type', 'application/zip');
-        res.setHeader('Content-Disposition', 'attachment; filename=respaldo.zip');
-        
         archive.pipe(res);
         archive.directory(downloadPath, false);
         await archive.finalize();
 
     } catch (error) {
-        console.error(error);
-        res.status(500).send('Error en el servidor. Verifica tus credenciales.');
+        console.error(error.message);
+        res.status(500).send(error.message || 'Error en el servidor.');
     } finally {
-        // Limpieza de archivos temporales después de 1 minuto para dar tiempo al ZIP
-        setTimeout(() => {
-            if (fs.existsSync(downloadPath)) {
-                fs.rmSync(downloadPath, { recursive: true, force: true });
-            }
-        }, 60000);
+        setTimeout(() => { if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true }); }, 60000);
     }
 });
 
-app.listen(port, () => console.log(`App de respaldo lista en puerto \${port}`));
+app.listen(port, () => console.log(`Server v2 running on port \${port}`));
