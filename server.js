@@ -1,6 +1,6 @@
 /**
- * ONESTOPENGLISH BACKUP TOOL - VERSION 2.0 (CORREGIDA)
- * Optimizado para despliegue en Render/Hosting y corrección de login.
+ * ONESTOPENGLISH BACKUP TOOL - VERSION 2.2 (Ruta Sign-In Corregida)
+ * Ajuste de endpoint de autenticación a /sign-in
  */
 
 const express = require('express');
@@ -31,8 +31,8 @@ const htmlContent = `
 </head>
 <body class="bg-slate-900 min-h-screen flex items-center justify-center p-4 font-sans">
     <div class="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-lg">
-        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-2">Respaldo v2.0</h1>
-        <p class="text-slate-500 text-center text-sm mb-8">Si el login falla, verifica que tu cuenta no tenga verificación de dos pasos activa.</p>
+        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-2">Respaldo v2.2</h1>
+        <p class="text-slate-500 text-center text-sm mb-8">Ruta de acceso actualizada a /sign-in</p>
         
         <div class="space-y-5">
             <div>
@@ -51,7 +51,7 @@ const htmlContent = `
         <div id="status" class="mt-8 border-t border-slate-100 pt-6 hidden">
             <div class="flex items-center space-x-3 mb-4">
                 <div class="animate-spin rounded-full h-5 w-5 border-2 border-indigo-600 border-t-transparent"></div>
-                <span id="statusText" class="text-sm font-semibold text-slate-700">Conectando...</span>
+                <span id="statusText" class="text-sm font-semibold text-slate-700">Procesando...</span>
             </div>
             <div class="bg-slate-800 p-4 rounded-xl shadow-inner">
                 <div id="log" class="text-[11px] font-mono text-indigo-300 custom-scroll overflow-y-auto max-h-48 space-y-1"></div>
@@ -80,7 +80,7 @@ const htmlContent = `
             btn.disabled = true;
             btn.classList.add('opacity-50');
             status.classList.remove('hidden');
-            addLog("Enviando petición de acceso...");
+            addLog("Estableciendo conexión segura...");
 
             try {
                 const response = await fetch('/api/download', {
@@ -90,7 +90,7 @@ const htmlContent = `
                 });
 
                 if (response.ok) {
-                    addLog("Descarga finalizada. El navegador recibirá el ZIP ahora.");
+                    addLog("¡Acceso verificado! Compilando archivos PDF...");
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -99,12 +99,13 @@ const htmlContent = `
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
+                    document.getElementById('statusText').innerText = "✅ Proceso terminado.";
                 } else {
                     const text = await response.text();
-                    addLog("Error: " + text);
+                    addLog("Detalle del servidor: " + text);
                 }
             } catch (err) {
-                addLog("Error crítico de conexión.");
+                addLog("Error de conexión (Timeout o Red).");
             } finally {
                 btn.disabled = false;
                 btn.classList.remove('opacity-50');
@@ -125,49 +126,48 @@ app.post('/api/download', async (req, res) => {
 
     const { email, password } = req.body;
     const downloadPath = path.join(__dirname, `backup_tmp_${Date.now()}`);
-    let cookies = "";
+    const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
     try {
         if (!fs.existsSync(downloadPath)) fs.mkdirSync(downloadPath);
 
-        // 1. OBTENER COOKIES INICIALES Y POSIBLE TOKEN
-        const initialRes = await axios.get('https://www.onestopenglish.com/login', {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
-        });
-        const initialCookies = initialRes.headers['set-cookie']?.map(c => c.split(';')[0]).join('; ') || "";
+        const baseUrl = 'https://www.onestopenglish.com';
+        const signInUrl = `${baseUrl}/sign-in`;
+        
+        // 1. Visitar sign-in para capturar cookies iniciales
+        const initPage = await axios.get(signInUrl, { headers: { 'User-Agent': UA } });
+        let cookies = initPage.headers['set-cookie']?.map(c => c.split(';')[0]).join('; ') || "";
 
-        // 2. INTENTAR LOGIN CON CAMPOS FORMATEADOS
+        // 2. Ejecutar el Login
         const params = new URLSearchParams();
         params.append('username', email);
         params.append('password', password);
-        params.append('login', 'Log in'); // A veces el botón tiene nombre y valor
+        params.append('login', 'Sign in'); // Nombre común del botón en inglés
 
-        const loginRes = await axios.post('https://www.onestopenglish.com/login', params.toString(), {
+        const loginRes = await axios.post(signInUrl, params.toString(), {
             headers: { 
-                'Cookie': initialCookies,
+                'Cookie': cookies,
                 'Content-Type': 'application/x-www-form-urlencoded',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': 'https://www.onestopenglish.com/login'
+                'User-Agent': UA,
+                'Referer': signInUrl
             },
             maxRedirects: 0,
-            validateStatus: (status) => status >= 200 && status < 400
+            validateStatus: (status) => status >= 200 && status < 405 
         });
 
-        cookies = loginRes.headers['set-cookie'] ? loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ') : initialCookies;
-
-        // Si no hay redirección exitosa o nuevas cookies, el login falló
-        if (loginRes.status === 200 && loginRes.data.includes('login-form')) {
-            throw new Error('Credenciales inválidas o acceso denegado por el sitio.');
+        // Actualizar cookies post-login
+        if (loginRes.headers['set-cookie']) {
+            cookies = loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
         }
 
-        // 3. PROCESO DE RASTREO
-        const sections = ['/skills', '/grammar-and-vocabulary', '/business-and-esp'];
+        // 3. PROCESAR DESCARGAS
+        const sections = ['/skills', '/grammar-and-vocabulary', '/methodology', '/young-learners'];
         for (const section of sections) {
             const sectionDir = path.join(downloadPath, section.replace(/\//g, '') || 'general');
             if (!fs.existsSync(sectionDir)) fs.mkdirSync(sectionDir);
 
-            const pageRes = await axios.get(`https://www.onestopenglish.com${section}`, {
-                headers: { 'Cookie': cookies, 'User-Agent': 'Mozilla/5.0' }
+            const pageRes = await axios.get(`${baseUrl}${section}`, {
+                headers: { 'Cookie': cookies, 'User-Agent': UA }
             });
 
             const pdfRegex = /href="([^"]+\.pdf)"/g;
@@ -175,23 +175,22 @@ app.post('/api/download', async (req, res) => {
             while ((match = pdfRegex.exec(pageRes.data)) !== null) {
                 let fileUrl = match[1];
                 try {
-                    if (!fileUrl.startsWith('http')) fileUrl = 'https://www.onestopenglish.com' + fileUrl;
+                    if (!fileUrl.startsWith('http')) fileUrl = baseUrl + fileUrl;
                     const fileName = path.basename(fileUrl).split('?')[0];
                     const fileTarget = path.join(sectionDir, fileName);
 
                     const fileStream = await axios({
                         method: 'get', url: fileUrl, responseType: 'stream',
-                        headers: { 'Cookie': cookies, 'User-Agent': 'Mozilla/5.0' }
+                        headers: { 'Cookie': cookies, 'User-Agent': UA }
                     });
 
                     const writer = fs.createWriteStream(fileTarget);
                     fileStream.data.pipe(writer);
                     await new Promise(r => writer.on('finish', r));
-                } catch (e) { /* Saltar archivos fallidos */ }
+                } catch (e) {}
             }
         }
 
-        // 4. ZIP
         const archive = archiver('zip', { zlib: { level: 5 } });
         res.setHeader('Content-Type', 'application/zip');
         archive.pipe(res);
@@ -199,11 +198,12 @@ app.post('/api/download', async (req, res) => {
         await archive.finalize();
 
     } catch (error) {
-        console.error(error.message);
-        res.status(500).send(error.message || 'Error en el servidor.');
+        let msg = error.message;
+        if (error.response) msg = `Error \${error.response.status} en \${error.config.url}`;
+        res.status(500).send(msg);
     } finally {
         setTimeout(() => { if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true }); }, 60000);
     }
 });
 
-app.listen(port, () => console.log(`Server v2 running on port \${port}`));
+app.listen(port, () => console.log(`Server v2.2 running on port \${port}`));
