@@ -1,6 +1,6 @@
 /**
- * ONESTOPENGLISH BACKUP TOOL - VERSION 2.2 (Ruta Sign-In Corregida)
- * Ajuste de endpoint de autenticación a /sign-in
+ * ONESTOPENGLISH BACKUP TOOL - VERSION 2.3 (Campos de Login Corregidos)
+ * Ajuste de parámetros de formulario para coincidir con la web oficial.
  */
 
 const express = require('express');
@@ -31,8 +31,8 @@ const htmlContent = `
 </head>
 <body class="bg-slate-900 min-h-screen flex items-center justify-center p-4 font-sans">
     <div class="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-lg">
-        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-2">Respaldo v2.2</h1>
-        <p class="text-slate-500 text-center text-sm mb-8">Ruta de acceso actualizada a /sign-in</p>
+        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-2">Respaldo v2.3</h1>
+        <p class="text-slate-500 text-center text-sm mb-8">Login optimizado para la estructura de Macmillan Education</p>
         
         <div class="space-y-5">
             <div>
@@ -80,7 +80,7 @@ const htmlContent = `
             btn.disabled = true;
             btn.classList.add('opacity-50');
             status.classList.remove('hidden');
-            addLog("Estableciendo conexión segura...");
+            addLog("Iniciando sesión en Macmillan/Onestop...");
 
             try {
                 const response = await fetch('/api/download', {
@@ -90,7 +90,7 @@ const htmlContent = `
                 });
 
                 if (response.ok) {
-                    addLog("¡Acceso verificado! Compilando archivos PDF...");
+                    addLog("¡Login exitoso! Rastreando archivos...");
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -99,13 +99,13 @@ const htmlContent = `
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
-                    document.getElementById('statusText').innerText = "✅ Proceso terminado.";
+                    document.getElementById('statusText').innerText = "✅ Backup completado.";
                 } else {
                     const text = await response.text();
-                    addLog("Detalle del servidor: " + text);
+                    addLog("Respuesta del servidor: " + text);
                 }
             } catch (err) {
-                addLog("Error de conexión (Timeout o Red).");
+                addLog("Error en el proceso. Revisa los logs de Render.");
             } finally {
                 btn.disabled = false;
                 btn.classList.remove('opacity-50');
@@ -134,33 +134,37 @@ app.post('/api/download', async (req, res) => {
         const baseUrl = 'https://www.onestopenglish.com';
         const signInUrl = `${baseUrl}/sign-in`;
         
-        // 1. Visitar sign-in para capturar cookies iniciales
-        const initPage = await axios.get(signInUrl, { headers: { 'User-Agent': UA } });
+        // 1. Obtener cookies iniciales
+        const initPage = await axios.get(signInUrl, { 
+            headers: { 'User-Agent': UA },
+            maxRedirects: 5
+        });
         let cookies = initPage.headers['set-cookie']?.map(c => c.split(';')[0]).join('; ') || "";
 
-        // 2. Ejecutar el Login
+        // 2. Ejecutar el Login con los nombres de campos CORRECTOS
+        // Onestopenglish usa 'email' y 'password' en su formulario interno
         const params = new URLSearchParams();
-        params.append('username', email);
+        params.append('email', email); 
         params.append('password', password);
-        params.append('login', 'Sign in'); // Nombre común del botón en inglés
+        params.append('rememberMe', 'true');
 
         const loginRes = await axios.post(signInUrl, params.toString(), {
             headers: { 
                 'Cookie': cookies,
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'User-Agent': UA,
+                'Origin': baseUrl,
                 'Referer': signInUrl
             },
             maxRedirects: 0,
-            validateStatus: (status) => status >= 200 && status < 405 
+            validateStatus: (status) => status >= 200 && status < 400 
         });
 
-        // Actualizar cookies post-login
         if (loginRes.headers['set-cookie']) {
             cookies = loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
         }
 
-        // 3. PROCESAR DESCARGAS
+        // 3. DESCARGAS
         const sections = ['/skills', '/grammar-and-vocabulary', '/methodology', '/young-learners'];
         for (const section of sections) {
             const sectionDir = path.join(downloadPath, section.replace(/\//g, '') || 'general');
@@ -198,12 +202,16 @@ app.post('/api/download', async (req, res) => {
         await archive.finalize();
 
     } catch (error) {
-        let msg = error.message;
-        if (error.response) msg = `Error \${error.response.status} en \${error.config.url}`;
+        let msg = "Error desconocido";
+        if (error.response) {
+            msg = `Status ${error.response.status} en ${error.config.url}`;
+        } else {
+            msg = error.message;
+        }
         res.status(500).send(msg);
     } finally {
         setTimeout(() => { if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true }); }, 60000);
     }
 });
 
-app.listen(port, () => console.log(`Server v2.2 running on port \${port}`));
+app.listen(port, () => console.log(`Server v2.3 running on port ${port}`));
