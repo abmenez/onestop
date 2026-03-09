@@ -1,10 +1,11 @@
 {
 "name": "onestopenglish-backup-lite",
-"version": "1.0.0",
+"version": "1.0.1",
 "description": "Aplicación para respaldar la biblioteca completa de PDFs de Onestopenglish antes de su cierre.",
 "main": "server.js",
 "scripts": {
-"start": "node server.js"
+"start": "node server.js",
+"build": "echo 'No build step required'"
 },
 "dependencies": {
 "express": "^4.18.2",
