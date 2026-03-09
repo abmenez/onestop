@@ -1,6 +1,6 @@
 /**
- * ONESTOPENGLISH BACKUP TOOL - VERSION 2.3 (Campos de Login Corregidos)
- * Ajuste de parámetros de formulario para coincidir con la web oficial.
+ * ONESTOPENGLISH BACKUP TOOL - VERSION 2.4 (Manejo de Error 410 Gone)
+ * Intento de bypass de recursos eliminados y mejora de seguimiento de sesión.
  */
 
 const express = require('express');
@@ -31,8 +31,8 @@ const htmlContent = `
 </head>
 <body class="bg-slate-900 min-h-screen flex items-center justify-center p-4 font-sans">
     <div class="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-lg">
-        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-2">Respaldo v2.3</h1>
-        <p class="text-slate-500 text-center text-sm mb-8">Login optimizado para la estructura de Macmillan Education</p>
+        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-2">Respaldo v2.4</h1>
+        <p class="text-slate-500 text-center text-sm mb-8">Intentando recuperar archivos (Evitando Error 410)</p>
         
         <div class="space-y-5">
             <div>
@@ -44,7 +44,7 @@ const htmlContent = `
                 <input type="password" id="password" class="w-full p-4 border-2 border-slate-100 rounded-2xl mt-1 focus:border-indigo-500 focus:outline-none transition-colors" placeholder="••••••••">
             </div>
             <button onclick="startDownload()" id="btn" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg active:scale-[0.98]">
-                📦 Iniciar Respaldo Total
+                🚀 Iniciar Respaldo Total
             </button>
         </div>
 
@@ -80,7 +80,7 @@ const htmlContent = `
             btn.disabled = true;
             btn.classList.add('opacity-50');
             status.classList.remove('hidden');
-            addLog("Iniciando sesión en Macmillan/Onestop...");
+            addLog("Iniciando bypass de seguridad...");
 
             try {
                 const response = await fetch('/api/download', {
@@ -90,7 +90,7 @@ const htmlContent = `
                 });
 
                 if (response.ok) {
-                    addLog("¡Login exitoso! Rastreando archivos...");
+                    addLog("Proceso de rastreo completado.");
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -99,13 +99,13 @@ const htmlContent = `
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
-                    document.getElementById('statusText').innerText = "✅ Backup completado.";
+                    document.getElementById('statusText').innerText = "✅ Backup finalizado.";
                 } else {
                     const text = await response.text();
-                    addLog("Respuesta del servidor: " + text);
+                    addLog("Aviso: " + text);
                 }
             } catch (err) {
-                addLog("Error en el proceso. Revisa los logs de Render.");
+                addLog("Error de conexión. Revisa los logs de Render.");
             } finally {
                 btn.disabled = false;
                 btn.classList.remove('opacity-50');
@@ -134,65 +134,80 @@ app.post('/api/download', async (req, res) => {
         const baseUrl = 'https://www.onestopenglish.com';
         const signInUrl = `${baseUrl}/sign-in`;
         
-        // 1. Obtener cookies iniciales
-        const initPage = await axios.get(signInUrl, { 
+        // Configuración común de Axios
+        const client = axios.create({
             headers: { 'User-Agent': UA },
-            maxRedirects: 5
+            maxRedirects: 5,
+            validateStatus: (status) => status < 500 // Aceptamos 410 para manejarlo nosotros
         });
+
+        // 1. Obtener cookies iniciales
+        const initPage = await client.get(signInUrl);
         let cookies = initPage.headers['set-cookie']?.map(c => c.split(';')[0]).join('; ') || "";
 
-        // 2. Ejecutar el Login con los nombres de campos CORRECTOS
-        // Onestopenglish usa 'email' y 'password' en su formulario interno
+        // 2. Login
         const params = new URLSearchParams();
         params.append('email', email); 
         params.append('password', password);
         params.append('rememberMe', 'true');
 
-        const loginRes = await axios.post(signInUrl, params.toString(), {
+        const loginRes = await client.post(signInUrl, params.toString(), {
             headers: { 
                 'Cookie': cookies,
                 'Content-Type': 'application/x-www-form-urlencoded',
-                'User-Agent': UA,
-                'Origin': baseUrl,
                 'Referer': signInUrl
-            },
-            maxRedirects: 0,
-            validateStatus: (status) => status >= 200 && status < 400 
+            }
         });
 
         if (loginRes.headers['set-cookie']) {
             cookies = loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
         }
 
-        // 3. DESCARGAS
+        // 3. DESCARGAS (Con manejo de error individual por sección)
         const sections = ['/skills', '/grammar-and-vocabulary', '/methodology', '/young-learners'];
+        let filesFound = 0;
+
         for (const section of sections) {
-            const sectionDir = path.join(downloadPath, section.replace(/\//g, '') || 'general');
-            if (!fs.existsSync(sectionDir)) fs.mkdirSync(sectionDir);
+            try {
+                const sectionDir = path.join(downloadPath, section.replace(/\//g, '') || 'general');
+                if (!fs.existsSync(sectionDir)) fs.mkdirSync(sectionDir);
 
-            const pageRes = await axios.get(`${baseUrl}${section}`, {
-                headers: { 'Cookie': cookies, 'User-Agent': UA }
-            });
+                const pageRes = await client.get(`${baseUrl}${section}`, {
+                    headers: { 'Cookie': cookies }
+                });
 
-            const pdfRegex = /href="([^"]+\.pdf)"/g;
-            let match;
-            while ((match = pdfRegex.exec(pageRes.data)) !== null) {
-                let fileUrl = match[1];
-                try {
-                    if (!fileUrl.startsWith('http')) fileUrl = baseUrl + fileUrl;
-                    const fileName = path.basename(fileUrl).split('?')[0];
-                    const fileTarget = path.join(sectionDir, fileName);
+                if (pageRes.status === 410) {
+                    console.log(`Sección ${section} marcada como eliminada (410).`);
+                    continue; 
+                }
 
-                    const fileStream = await axios({
-                        method: 'get', url: fileUrl, responseType: 'stream',
-                        headers: { 'Cookie': cookies, 'User-Agent': UA }
-                    });
+                const pdfRegex = /href="([^"]+\.pdf)"/g;
+                let match;
+                while ((match = pdfRegex.exec(pageRes.data)) !== null) {
+                    let fileUrl = match[1];
+                    try {
+                        if (!fileUrl.startsWith('http')) fileUrl = baseUrl + fileUrl;
+                        const fileName = path.basename(fileUrl).split('?')[0];
+                        const fileTarget = path.join(sectionDir, fileName);
 
-                    const writer = fs.createWriteStream(fileTarget);
-                    fileStream.data.pipe(writer);
-                    await new Promise(r => writer.on('finish', r));
-                } catch (e) {}
+                        const fileStream = await client({
+                            method: 'get', url: fileUrl, responseType: 'stream',
+                            headers: { 'Cookie': cookies }
+                        });
+
+                        const writer = fs.createWriteStream(fileTarget);
+                        fileStream.data.pipe(writer);
+                        await new Promise(r => writer.on('finish', r));
+                        filesFound++;
+                    } catch (e) {}
+                }
+            } catch (err) {
+                console.log(`Error saltado en sección ${section}: ${err.message}`);
             }
+        }
+
+        if (filesFound === 0) {
+            return res.status(404).send("No se pudieron extraer archivos. Es posible que el acceso esté restringido o el sitio ya esté cerrado.");
         }
 
         const archive = archiver('zip', { zlib: { level: 5 } });
@@ -202,16 +217,10 @@ app.post('/api/download', async (req, res) => {
         await archive.finalize();
 
     } catch (error) {
-        let msg = "Error desconocido";
-        if (error.response) {
-            msg = `Status ${error.response.status} en ${error.config.url}`;
-        } else {
-            msg = error.message;
-        }
-        res.status(500).send(msg);
+        res.status(500).send(error.message);
     } finally {
         setTimeout(() => { if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true }); }, 60000);
     }
 });
 
-app.listen(port, () => console.log(`Server v2.3 running on port ${port}`));
+app.listen(port, () => console.log(`Server v2.4 running on port ${port}`));
