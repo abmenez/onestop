@@ -1,6 +1,6 @@
 /**
- * ONESTOPENGLISH BACKUP TOOL - VERSION 2.4 (Manejo de Error 410 Gone)
- * Intento de bypass de recursos eliminados y mejora de seguimiento de sesión.
+ * ONESTOPENGLISH BACKUP TOOL - VERSION 2.5 (Descarga por IDs)
+ * Optimizado para capturar enlaces tipo /download?ac=XXXX
  */
 
 const express = require('express');
@@ -8,7 +8,6 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
-const FormData = require('form-data');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -31,20 +30,20 @@ const htmlContent = `
 </head>
 <body class="bg-slate-900 min-h-screen flex items-center justify-center p-4 font-sans">
     <div class="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-lg">
-        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-2">Respaldo v2.4</h1>
-        <p class="text-slate-500 text-center text-sm mb-8">Intentando recuperar archivos (Evitando Error 410)</p>
+        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-2">Respaldo v2.5</h1>
+        <p class="text-slate-500 text-center text-sm mb-8">Detectando enlaces de descarga dinámica (?ac=)</p>
         
         <div class="space-y-5">
             <div>
                 <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Email / Usuario</label>
-                <input type="text" id="email" class="w-full p-4 border-2 border-slate-100 rounded-2xl mt-1 focus:border-indigo-500 focus:outline-none transition-colors" placeholder="email@ejemplo.com">
+                <input type="text" id="email" class="w-full p-4 border-2 border-slate-100 rounded-2xl mt-1 focus:border-indigo-500 focus:outline-none transition-colors" placeholder="tu-email@ejemplo.com">
             </div>
             <div>
                 <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Contraseña</label>
                 <input type="password" id="password" class="w-full p-4 border-2 border-slate-100 rounded-2xl mt-1 focus:border-indigo-500 focus:outline-none transition-colors" placeholder="••••••••">
             </div>
             <button onclick="startDownload()" id="btn" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg active:scale-[0.98]">
-                🚀 Iniciar Respaldo Total
+                🚀 Iniciar Captura de Materiales
             </button>
         </div>
 
@@ -75,12 +74,11 @@ const htmlContent = `
             const btn = document.getElementById('btn');
             const status = document.getElementById('status');
 
-            if(!email || !password) return alert('Credenciales incompletas.');
+            if(!email || !password) return alert('Ingresa tus credenciales.');
 
             btn.disabled = true;
-            btn.classList.add('opacity-50');
             status.classList.remove('hidden');
-            addLog("Iniciando bypass de seguridad...");
+            addLog("Conectando con Macmillan...");
 
             try {
                 const response = await fetch('/api/download', {
@@ -90,25 +88,24 @@ const htmlContent = `
                 });
 
                 if (response.ok) {
-                    addLog("Proceso de rastreo completado.");
+                    addLog("¡Archivos capturados! Descargando ZIP...");
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = "Backup_Onestopenglish.zip";
+                    a.download = "Onestop_Backup.zip";
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
-                    document.getElementById('statusText').innerText = "✅ Backup finalizado.";
+                    document.getElementById('statusText').innerText = "✅ Finalizado.";
                 } else {
                     const text = await response.text();
-                    addLog("Aviso: " + text);
+                    addLog("Error: " + text);
                 }
             } catch (err) {
-                addLog("Error de conexión. Revisa los logs de Render.");
+                addLog("Error de red.");
             } finally {
                 btn.disabled = false;
-                btn.classList.remove('opacity-50');
             }
         }
     </script>
@@ -122,93 +119,84 @@ app.get('/', (req, res) => res.send(htmlContent));
 
 app.post('/api/download', async (req, res) => {
     req.setTimeout(0);
-    res.setTimeout(0);
-
     const { email, password } = req.body;
-    const downloadPath = path.join(__dirname, `backup_tmp_${Date.now()}`);
+    const downloadPath = path.join(__dirname, `backup_${Date.now()}`);
     const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
     try {
         if (!fs.existsSync(downloadPath)) fs.mkdirSync(downloadPath);
 
-        const baseUrl = 'https://www.onestopenglish.com';
-        const signInUrl = `${baseUrl}/sign-in`;
-        
-        // Configuración común de Axios
         const client = axios.create({
             headers: { 'User-Agent': UA },
             maxRedirects: 5,
-            validateStatus: (status) => status < 500 // Aceptamos 410 para manejarlo nosotros
+            jar: true // Para manejo de sesiones si fuera necesario
         });
 
-        // 1. Obtener cookies iniciales
+        // 1. LOGIN
+        const baseUrl = 'https://www.onestopenglish.com';
+        const signInUrl = `${baseUrl}/sign-in`;
+        
         const initPage = await client.get(signInUrl);
         let cookies = initPage.headers['set-cookie']?.map(c => c.split(';')[0]).join('; ') || "";
 
-        // 2. Login
         const params = new URLSearchParams();
-        params.append('email', email); 
+        params.append('email', email);
         params.append('password', password);
-        params.append('rememberMe', 'true');
 
         const loginRes = await client.post(signInUrl, params.toString(), {
-            headers: { 
-                'Cookie': cookies,
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Referer': signInUrl
-            }
+            headers: { 'Cookie': cookies, 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': signInUrl }
         });
 
         if (loginRes.headers['set-cookie']) {
             cookies = loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
         }
 
-        // 3. DESCARGAS (Con manejo de error individual por sección)
-        const sections = ['/skills', '/grammar-and-vocabulary', '/methodology', '/young-learners'];
+        // 2. RASTREO DE ENLACES DINÁMICOS
+        const sections = ['/skills', '/grammar-and-vocabulary', '/methodology'];
         let filesFound = 0;
 
         for (const section of sections) {
-            try {
-                const sectionDir = path.join(downloadPath, section.replace(/\//g, '') || 'general');
-                if (!fs.existsSync(sectionDir)) fs.mkdirSync(sectionDir);
+            const sectionDir = path.join(downloadPath, section.replace(/\//g, '') || 'docs');
+            if (!fs.existsSync(sectionDir)) fs.mkdirSync(sectionDir);
 
-                const pageRes = await client.get(`${baseUrl}${section}`, {
-                    headers: { 'Cookie': cookies }
-                });
+            const pageRes = await client.get(`${baseUrl}${section}`, { headers: { 'Cookie': cookies } });
+            
+            // Regex para buscar /download?ac=XXXX
+            const downloadRegex = /\/download\?ac=(\d+)/g;
+            let match;
+            const ids = new Set();
+            while ((match = downloadRegex.exec(pageRes.data)) !== null) {
+                ids.add(match[1]);
+            }
 
-                if (pageRes.status === 410) {
-                    console.log(`Sección ${section} marcada como eliminada (410).`);
-                    continue; 
+            for (const id of ids) {
+                try {
+                    const fileUrl = `${baseUrl}/download?ac=${id}`;
+                    const fileRes = await client({
+                        method: 'get',
+                        url: fileUrl,
+                        responseType: 'stream',
+                        headers: { 'Cookie': cookies, 'Referer': `${baseUrl}${section}` }
+                    });
+
+                    // Intentar obtener el nombre real desde el header content-disposition
+                    const disposition = fileRes.headers['content-disposition'];
+                    let fileName = `document_${id}.pdf`;
+                    if (disposition && disposition.includes('filename=')) {
+                        fileName = disposition.split('filename=')[1].replace(/"/g, '').split(';')[0].trim();
+                    }
+
+                    const writer = fs.createWriteStream(path.join(sectionDir, fileName));
+                    fileRes.data.pipe(writer);
+                    await new Promise(r => writer.on('finish', r));
+                    filesFound++;
+                } catch (e) {
+                    console.log(`Fallo en ID \${id}`);
                 }
-
-                const pdfRegex = /href="([^"]+\.pdf)"/g;
-                let match;
-                while ((match = pdfRegex.exec(pageRes.data)) !== null) {
-                    let fileUrl = match[1];
-                    try {
-                        if (!fileUrl.startsWith('http')) fileUrl = baseUrl + fileUrl;
-                        const fileName = path.basename(fileUrl).split('?')[0];
-                        const fileTarget = path.join(sectionDir, fileName);
-
-                        const fileStream = await client({
-                            method: 'get', url: fileUrl, responseType: 'stream',
-                            headers: { 'Cookie': cookies }
-                        });
-
-                        const writer = fs.createWriteStream(fileTarget);
-                        fileStream.data.pipe(writer);
-                        await new Promise(r => writer.on('finish', r));
-                        filesFound++;
-                    } catch (e) {}
-                }
-            } catch (err) {
-                console.log(`Error saltado en sección ${section}: ${err.message}`);
             }
         }
 
-        if (filesFound === 0) {
-            return res.status(404).send("No se pudieron extraer archivos. Es posible que el acceso esté restringido o el sitio ya esté cerrado.");
-        }
+        if (filesFound === 0) return res.status(404).send("No se encontraron enlaces de descarga válidos.");
 
         const archive = archiver('zip', { zlib: { level: 5 } });
         res.setHeader('Content-Type', 'application/zip');
@@ -219,8 +207,8 @@ app.post('/api/download', async (req, res) => {
     } catch (error) {
         res.status(500).send(error.message);
     } finally {
-        setTimeout(() => { if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true }); }, 60000);
+        setTimeout(() => { if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true }); }, 120000);
     }
 });
 
-app.listen(port, () => console.log(`Server v2.4 running on port ${port}`));
+app.listen(port, () => console.log(`Server v2.5 live on \${port}`));
